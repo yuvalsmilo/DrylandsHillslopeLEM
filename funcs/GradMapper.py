@@ -34,7 +34,7 @@ class GradMapper(Component):
     def __init__(
             self,
             grid,
-            minslope = 0.0001,
+            minslope = 0.1,
     ):
         super(GradMapper, self).__init__(grid)
 
@@ -61,12 +61,24 @@ class GradMapper(Component):
         values_at_links = topographic_gradient_at_link[self._grid.links_at_node] * self._grid.link_dirs_at_node         # this procedure makes incoming links NEGATIVE
         steepest_links_at_node = np.amax(values_at_links, axis=1) # take the maximm (positive means out link)
 
-        # Avoid accumulating water in pits.
-        self._grid.at_node['surface_water__depth'][steepest_links_at_node < 0] = 0
         gradient_of_downwind_link_at_node[:] = 0 # set all to zero
         gradient_of_downwind_link_at_node[:] = np.fmax(steepest_links_at_node,
                                                        gradient_of_downwind_link_at_node) # if maximal link is negative, it will be zero. meaning, no outflux
         gradient_of_downwind_link_at_node[gradient_of_downwind_link_at_node <= self._minslope] = 0
-        gradients_vals[:] = gradient_of_downwind_link_at_node[:]
-        gradient_of_downwind_link_at_node[cliff_nodes == 1] = 0
+
+
+
+        ### CALC WATER SURFACE GRADIENT AT !NODE!
+        water_gradient_at_link = self._grid.calc_grad_at_link('water_surface__elevation')
+
+        values_at_links = water_gradient_at_link[
+                              self._grid.links_at_node] * self._grid.link_dirs_at_node  # this procedure makes incoming links NEGATIVE
+        steepest_links_at_node = np.amax(values_at_links, axis=1)  # take the maximm (positive means out link)
+
+        gradients_vals[:]=0
+        watergradient_of_downwind_link_at_node = np.fmax(steepest_links_at_node,
+                                                       gradients_vals)  # if maximal link is negative, it will be zero. meaning, no outflux
+        watergradient_of_downwind_link_at_node[watergradient_of_downwind_link_at_node <= self._minslope] = 0
+        gradients_vals[:] = watergradient_of_downwind_link_at_node[:]
+
         return

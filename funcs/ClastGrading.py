@@ -49,6 +49,7 @@ class ClastGrading(Component):
                  n_size_classes = 10,         # Number of size classes
                  alpha = 1,
                  clast_density = 2000,        # Particles density [kg/m3]
+                 phi = 0,                     # Porosity [-]
                  **kwargs,
     ):
         super(ClastGrading, self).__init__(grid)
@@ -59,7 +60,7 @@ class ClastGrading(Component):
         self.n_sizes = n_size_classes
         self.N = int(self.grading_name.split('-')[0][1:])
         self.clast_density = clast_density
-
+        self._phi = phi
         # Create out fields
         grid.add_zeros('median__size_weight', at='node')
         grid.add_zeros('soil__depth', at='node')
@@ -144,6 +145,7 @@ class ClastGrading(Component):
             self.g_state0 = locals()[grading_name]
             self.grid.at_node['grain__weight'] *= locals()[grading_name]
             layer_depth = np.sum(self.g_state0) / (self.clast_density * self.grid.dx *self.grid.dx )  # meter
+            layer_depth /= (1-self._phi) # Porosity correction
             self.grid.at_node['soil__depth'] +=  layer_depth
         else:
             self.g_state_slide = locals()[grading_name]

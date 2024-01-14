@@ -96,6 +96,7 @@ class SizeDependentClastTransport(Component):
             g     = 9.8,  # gravity constant
             critical_debris_cover = 0.1, # critical value for debris cover [m]
             no_trasported_weight_threshold = 100, # minimal weight in node which below there is no transport of material
+            phi = 0,
             correct_to_debris_thick = False,
 
     ):
@@ -108,6 +109,7 @@ class SizeDependentClastTransport(Component):
         self._critical_debris_cover = critical_debris_cover
         self._correct_to_debris_thick_flag = correct_to_debris_thick
         self._g = g
+        self._phi  = phi
         self._minimal_weight_in_kilograms = no_trasported_weight_threshold
         self._unitwt = self._rho * self._g
         self._nodes = np.shape(self._grid.nodes)[0] * np.shape(self._grid.nodes)[1]
@@ -121,8 +123,7 @@ class SizeDependentClastTransport(Component):
         self._n_links = np.size(self._zeros_at_link)
         self._links_array  = np.arange(0,np.size(self._zeros_at_link)).tolist()
         b = self._grid.at_node['median__size_weight'].copy()
-        b[b == 0] = 100000  # stupid large number for the divide by very small value.
-                            # This will create a very large tau_star_c where there is no sediment
+        b[b == 0] = 100000  # large number -> creates a very large tau_star_c where there is no sediment
         self._tau_star_c_at_node = self._alpha * ((self._grid.at_node['fraction_sizes'] / b.reshape(-1, 1)) ** self._beta)
         self._mean_sizes_at_link = np.zeros_like(self._zeros_at_link_for_fractions)
         self._stress_star_at_link = np.zeros_like(self._zeros_at_link_for_fractions)
@@ -207,7 +208,7 @@ class SizeDependentClastTransport(Component):
             excess_stress.fill(0.)
 
             sum_grain_weight = np.sum(grain_weight_node,1)
-            indices_nonzero_mgs = np.where(sum_grain_weight > self._minimal_weight_in_kilograms )[0]
+            indices_above_mgs = np.where(sum_grain_weight > self._minimal_weight_in_kilograms)[0]
 
             # Calculate shear stress and shear stress star at LINKS:  links x size fractions
             stress_at_link[:] = self._unitwt * depth_at_link * wsgrad
@@ -219,10 +220,10 @@ class SizeDependentClastTransport(Component):
                                                                               self._nodes_flatten).astype('int')
             ## Calc tau star c at node based of mapped upwind node
             self._tau_star_c_at_node[:] = np.inf
-            self._tau_star_c_at_node[indices_nonzero_mgs, :] = self._alpha * ((np.divide(
-                self._grid.at_node['fraction_sizes'][indices_nonzero_mgs, :],
-                median_grain_size_vec[indices_nonzero_mgs])) ** self._beta
-            )
+            self._tau_star_c_at_node[indices_above_mgs, :] = self._alpha * ((np.divide(
+                self._grid.at_node['fraction_sizes'][indices_above_mgs, :],
+                median_grain_size_vec[indices_above_mgs])) ** self._beta
+                                                                            )
 
 
             # Update the values in the min matrix for later
@@ -282,6 +283,7 @@ class SizeDependentClastTransport(Component):
                 ## Flux calculation based on MPM equation
                 sed_flux_star_at_link_classes.fill(0.)
                 sed_flux_star_at_link_classes[row,col] = 8 * (excess_stress[row,col]) ** 1.5
+                sed_flux_star_at_link_classes[row,col] /= (1 - self._phi) # corecction for porosity
                 self._sed_flux_at_link_class[row,col] = np.multiply(
                     -np.sign(
                     stress_star_at_link[row,col]),
@@ -332,7 +334,7 @@ class SizeDependentClastTransport(Component):
 
             dzdt_temp = np.sum(self._dzdt_all, 1)
             self._sum_dzdt[:] = dzdt_temp[:]
-            weight_all = self._dzdt_all * self._cell_area * self._sigma
+            weight_all = self._dzdt_all * self._grid.dx**2 * self._sigma
 
             if np.any(weight_all<0):
                 dt_min_mass = np.min(
@@ -345,6 +347,7 @@ class SizeDependentClastTransport(Component):
             else:
                 dt_min_mass = np.inf
 
+            # For later stability check
             positive_indices = np.where(dzdt_temp>self._minslope)[0].tolist()
             positive_indices = np.delete(positive_indices,self._grid.node_is_boundary(positive_indices))
             negative_indices = np.where(dzdt_temp<-self._minslope)[0].tolist()
@@ -386,10 +389,10 @@ class SizeDependentClastTransport(Component):
 
         if np.any(self._sed_flux_at_link_class != 0):
 
-            grain_weight_node[:,:] += (self._dzdt_all * self._dt)  * (self._cell_area  * self._sigma)
+            grain_weight_node[:,:] += (self._dzdt_all * self._dt)  * (self._grid.dx**2  * self._sigma) * (1-self._phi)
             grain_weight_node[grain_weight_node < 0] = 0
             sum_grain_weight_node = np.sum(grain_weight_node, 1)
-            soil[self._grid.core_nodes] = sum_grain_weight_node[self._grid.core_nodes] / (self._cell_area * self._sigma)
+            soil[self._grid.core_nodes] = sum_grain_weight_node[self._grid.core_nodes] / (self._grid.dx**2 * self._sigma)
             soil[soil < 0] = 0  # For saftey. Prevent numeric issues
             topo[:] = soil[:] + bedrock[:]
 
