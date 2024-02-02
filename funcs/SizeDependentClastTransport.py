@@ -392,7 +392,7 @@ class SizeDependentClastTransport(Component):
             grain_weight_node[:,:] += (self._dzdt_all * self._dt)  * (self._grid.dx**2  * self._sigma) * (1-self._phi)
             grain_weight_node[grain_weight_node < 0] = 0
             sum_grain_weight_node = np.sum(grain_weight_node, 1)
-            soil[self._grid.core_nodes] = sum_grain_weight_node[self._grid.core_nodes] / (self._grid.dx**2 * self._sigma)
+            soil[self._grid.core_nodes] = sum_grain_weight_node[self._grid.core_nodes] / (self._grid.dx**2 * self._sigma * (1-self._phi))
             soil[soil < 0] = 0  # For saftey. Prevent numeric issues
             topo[:] = soil[:] + bedrock[:]
 
